@@ -55,14 +55,6 @@ export const AnalyzeScreen = ({
               )}
             </TouchableOpacity>
 
-            <TextInput
-              style={styles.analyzeInput}
-              value={analyzeInput}
-              onChangeText={setAnalyzeInput}
-              placeholder="분석 시 고려할 특이사항 (선택)"
-              multiline
-            />
-
             <TouchableOpacity
               style={[styles.actionBtn, { opacity: videoUri ? 1 : 0.5 }]}
               onPress={runAnalysis}

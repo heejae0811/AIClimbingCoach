@@ -25,13 +25,13 @@ export default function App() {
 
   // User Profile
   const [profile, setProfile] = useState<UserProfile>({
-    height: "175",
+    height: "170",
     weight: "70",
     age: "25",
-    experience: "1 year",
+    experience: "1년",
     sessions: "3",
-    currentGrade: "V4",
-    goalGrade: "V6",
+    currentGrade: "V1",
+    goalGrade: "V7",
   });
 
   // Home / Chat State
@@ -93,10 +93,10 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: inputToUse,
-          height: profile.height,
-          weight: profile.weight,
           history: history.slice(0, 5),
           profile: {
+            height: profile.height,
+            weight: profile.weight,
             age: profile.age,
             experience: profile.experience,
             sessions: profile.sessions,

@@ -19,19 +19,19 @@ export const ProfileScreen = ({ profile, setProfile }: ProfileScreenProps) => {
       <Header title="My Profile" />
       <ScrollView contentContainerStyle={{ padding: 20 }}>
         <View style={styles.profileSection}>
-          <Text style={styles.inputLabel}>신체 정보</Text>
+          <Text style={styles.inputLabel}>기본 정보</Text>
           <View style={styles.row}>
-            <View style={{ flex: 1, marginRight: 15 }}>
+            <View style={{ flex: 1, marginRight: 10 }}>
               <Text style={styles.subLabel}>키 (cm)</Text>
               <TextInput
                 style={styles.profileInput}
                 value={profile.height}
                 onChangeText={(t) => setProfile({ ...profile, height: t })}
                 keyboardType="numeric"
-                placeholder="175"
+                placeholder="170"
               />
             </View>
-            <View style={{ flex: 1 }}>
+            <View style={{ flex: 1, marginRight: 10 }}>
               <Text style={styles.subLabel}>몸무게 (kg)</Text>
               <TextInput
                 style={styles.profileInput}
@@ -41,9 +41,19 @@ export const ProfileScreen = ({ profile, setProfile }: ProfileScreenProps) => {
                 placeholder="70"
               />
             </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.subLabel}>나이</Text>
+              <TextInput
+                style={styles.profileInput}
+                value={profile.age}
+                onChangeText={(t) => setProfile({ ...profile, age: t })}
+                keyboardType="numeric"
+                placeholder="25"
+              />
+            </View>
           </View>
 
-          <Text style={[styles.inputLabel, { marginTop: 20 }]}>클라이밍 정보</Text>
+          <Text style={[styles.inputLabel, { marginTop: 24 }]}>클라이밍 정보</Text>
           <Text style={styles.subLabel}>경력</Text>
           <TextInput
             style={styles.profileInput}
@@ -61,6 +71,27 @@ export const ProfileScreen = ({ profile, setProfile }: ProfileScreenProps) => {
             placeholder="3"
           />
 
+          <View style={styles.row}>
+            <View style={{ flex: 1, marginRight: 15 }}>
+              <Text style={styles.subLabel}>현재 그레이드</Text>
+              <TextInput
+                style={styles.profileInput}
+                value={profile.currentGrade}
+                onChangeText={(t) => setProfile({ ...profile, currentGrade: t })}
+                placeholder="V1"
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.subLabel}>목표 그레이드</Text>
+              <TextInput
+                style={styles.profileInput}
+                value={profile.goalGrade}
+                onChangeText={(t) => setProfile({ ...profile, goalGrade: t })}
+                placeholder="V7"
+              />
+            </View>
+          </View>
+
           <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
             <Text style={styles.saveBtnText}>프로필 저장하기</Text>
           </TouchableOpacity>
@@ -71,7 +102,7 @@ export const ProfileScreen = ({ profile, setProfile }: ProfileScreenProps) => {
 };
 
 const styles = StyleSheet.create({
-  screen: { flex: 1 },
+  screen: { flex: 1, backgroundColor: "white" },
   profileSection: { backgroundColor: "white" },
   inputLabel: { fontSize: 18, fontWeight: "700", color: "#1E293B", marginBottom: 10 },
   subLabel: { fontSize: 13, color: "#64748B", marginBottom: 5, marginTop: 10 },
