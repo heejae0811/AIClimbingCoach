@@ -16,8 +16,13 @@ import { ProfileScreen } from "./src/screens/ProfileScreen";
 import { Tab, Message, AnalysisRecord, UserProfile } from "./src/types";
 
 // Constants
-const ANALYZE_URL = "http://172.24.135.200:8000/analyze";
-const CHAT_URL = "http://172.24.135.200:8000/chat";
+//const ANALYZE_URL = "http://172.24.135.200:8000/analyze";
+//const CHAT_URL = "http://172.24.135.200:8000/chat";
+
+// Google cloud server
+const BASE_URL ="https://ai-climbing-coach-backend-768956737511.asia-northeast3.run.app";
+const ANALYZE_URL = `${BASE_URL}/analyze`;
+const CHAT_URL = `${BASE_URL}/chat`;
 
 export default function App() {
   // Navigation
@@ -40,7 +45,7 @@ export default function App() {
     {
       id: "1",
       role: "ai",
-      text: "안녕하세요! 클라이밍에 대해 궁금한 점을 물어보세요. 영상을 분석하고 싶다면 '분석' 탭을 이용해 주세요.",
+      text: "안녕하세요! 클라이밍에 대해 궁금한 점을 물어보세요. 영상ㅁㄴㅇㄹㅁㄴㄹㅁㄴㅇㄹㅇㄴㄹㅇㄴㄹㅇㄴㄹ",
     },
   ]);
   const [chatLoading, setChatLoading] = useState(false);
@@ -158,7 +163,7 @@ export default function App() {
       if (result.success) {
         const newRecord: AnalysisRecord = {
           id: Date.now().toString(),
-          date: new Date().toLocaleDateString(),
+          date: new Date().toLocaleDateString('ko-KR'),
           level: result.level,
           prediction: result.prediction,
           confidence: result.confidence,
