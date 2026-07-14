@@ -45,7 +45,7 @@ export default function App() {
     {
       id: "1",
       role: "ai",
-      text: "안녕하세요! 클라이밍에 대해 궁금한 점을 물어보세요. 영상ㅁㄴㅇㄹㅁㄴㄹㅁㄴㅇㄹㅇㄴㄹㅇㄴㄹㅇㄴㄹ",
+      text: "안녕하세요! 클라이밍에 대해 궁금한 점을 물어보세요. 영상을 분석하고 싶다면 '분석' 탭을 이용해 주세요.",
     },
   ]);
   const [chatLoading, setChatLoading] = useState(false);
