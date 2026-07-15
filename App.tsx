@@ -1,8 +1,9 @@
 import { StatusBar } from "expo-status-bar";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   SafeAreaView,
   StyleSheet,
   View,
@@ -11,6 +12,11 @@ import * as ImagePicker from "expo-image-picker";
 import type { Session } from "@supabase/supabase-js";
 
 import { supabase } from "./lib/supabase";
+
+import {
+  uploadVideoNative,
+  uploadVideoWeb,
+} from "./src/services/videoUpload";
 
 // Components
 import { BottomTabs } from "./src/components/BottomTabs";
@@ -34,21 +40,15 @@ const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
 if (!BASE_URL) {
   throw new Error(
-    "API 서버 주소가 없습니다. .env의 EXPO_PUBLIC_API_URL을 확인하세요."
+    "The API server URL is missing. Check EXPO_PUBLIC_API_URL."
   );
 }
 
 const ANALYZE_URL = `${BASE_URL}/analyze`;
 const CHAT_URL = `${BASE_URL}/chat`;
 
-/**
- * 최상위 App
- *
- * 역할:
- * 1. Supabase 로그인 세션 확인
- * 2. 로그인 전에는 LoginScreen 표시
- * 3. 로그인 후에는 MainApp 표시
- */
+const VIDEO_BUCKET = "climbing-videos";
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -64,7 +64,10 @@ export default function App() {
         } = await supabase.auth.getSession();
 
         if (error) {
-          console.error("세션 확인 오류:", error.message);
+          console.error(
+            "Failed to retrieve the current session:",
+            error.message
+          );
         }
 
         if (isMounted) {
@@ -72,7 +75,10 @@ export default function App() {
           setAuthLoading(false);
         }
       } catch (error) {
-        console.error("세션 초기화 오류:", error);
+        console.error(
+          "Failed to initialize the session:",
+          error
+        );
 
         if (isMounted) {
           setAuthLoading(false);
@@ -80,14 +86,16 @@ export default function App() {
       }
     };
 
-    initializeSession();
+    void initializeSession();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, updatedSession) => {
-      setSession(updatedSession);
-      setAuthLoading(false);
-    });
+    } = supabase.auth.onAuthStateChange(
+      (_event, updatedSession) => {
+        setSession(updatedSession);
+        setAuthLoading(false);
+      }
+    );
 
     return () => {
       isMounted = false;
@@ -99,7 +107,11 @@ export default function App() {
     return (
       <SafeAreaView style={styles.loadingScreen}>
         <StatusBar style="dark" />
-        <ActivityIndicator size="large" color="#2563EB" />
+
+        <ActivityIndicator
+          size="large"
+          color="#2563EB"
+        />
       </SafeAreaView>
     );
   }
@@ -115,88 +127,281 @@ interface MainAppProps {
   session: Session;
 }
 
-/**
- * 로그인 후 표시되는 기존 앱
- */
 function MainApp({ session }: MainAppProps) {
   // Navigation
-  const [activeTab, setActiveTab] = useState<Tab>("home");
+  const [activeTab, setActiveTab] =
+    useState<Tab>("home");
 
-  // User Profile
-  const [profile, setProfile] = useState<UserProfile>({
-    height: "",
-    weight: "",
-    age: "",
-    experience: "",
-    sessions: "",
-    currentGrade: "",
-    goalGrade: "",
-  });
+  // User profile
+  const [profile, setProfile] =
+    useState<UserProfile>({
+      height: "",
+      weight: "",
+      age: "",
+      experience: "",
+      sessions: "",
+      currentGrade: "",
+      goalGrade: "",
+    });
 
-  // Home / Chat
+  // Chat
   const [chatInput, setChatInput] = useState("");
+
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "initial-message",
       role: "ai",
-      text: "안녕하세요! 클라이밍에 대해 궁금한 점을 물어보세요. 영상을 분석하고 싶다면 '분석' 탭을 이용해 주세요.",
+      text: "Hello! Ask me anything about climbing. To analyze a video, open the Analyze tab.",
     },
   ]);
+
   const [chatLoading, setChatLoading] = useState(false);
 
-  // Analyze
-  const [videoUri, setVideoUri] = useState<string | null>(null);
-  const [analyzeInput, setAnalyzeInput] = useState("");
-  const [analyzeLoading, setAnalyzeLoading] = useState(false);
-  const [loadingStep, setLoadingStep] = useState(0);
-  const [currentAnalysis, setCurrentAnalysis] =
-    useState<AnalysisRecord | null>(null);
+  // Video analysis
+  const [videoUri, setVideoUri] =
+    useState<string | null>(null);
+
+  /*
+   * Browser File object.
+   * Used only on web.
+   */
+  const [videoFile, setVideoFile] =
+    useState<any>(null);
+
+  const [videoFileName, setVideoFileName] =
+    useState<string | null>(null);
+
+  const [videoMimeType, setVideoMimeType] =
+    useState<string | null>(null);
+
+  const [uploadProgress, setUploadProgress] =
+    useState(0);
+
+  const [analyzeInput, setAnalyzeInput] =
+    useState("");
+
+  const [analyzeLoading, setAnalyzeLoading] =
+    useState(false);
+
+  const [loadingStep, setLoadingStep] =
+    useState(0);
+
+  const [
+    currentAnalysis,
+    setCurrentAnalysis,
+  ] = useState<AnalysisRecord | null>(null);
 
   // History
-  const [history, setHistory] = useState<AnalysisRecord[]>([]);
-  const [selectedHistoryItem, setSelectedHistoryItem] =
-    useState<AnalysisRecord | null>(null);
+  const [history, setHistory] =
+    useState<AnalysisRecord[]>([]);
 
-  const loadingSteps = [
-    "Uploading video...",
-    "Detecting pose with MediaPipe...",
-    "Extracting movement features...",
-    "Running machine learning model...",
-    "Interpreting with LIME...",
-    "Generating Gemini feedback...",
-  ];
+  const [
+    selectedHistoryItem,
+    setSelectedHistoryItem,
+  ] = useState<AnalysisRecord | null>(null);
+
+  const loadingSteps = useMemo(
+    () => [
+      uploadProgress > 0 && uploadProgress < 100
+        ? `Uploading video... ${uploadProgress}%`
+        : "Uploading video...",
+      "Downloading the video for processing...",
+      "Detecting pose with MediaPipe...",
+      "Extracting movement features...",
+      "Running the machine learning model...",
+      "Interpreting the result with LIME...",
+      "Generating personalized AI feedback...",
+    ],
+    [uploadProgress]
+  );
+
+  useEffect(() => {
+    void loadAnalysisHistory();
+  }, []);
 
   useEffect(() => {
     if (!analyzeLoading) {
       return;
     }
 
-    setLoadingStep(0);
-
+    /*
+     * The first step is controlled by upload progress.
+     * After upload, the remaining steps advance as status messages.
+     */
     const interval = setInterval(() => {
-      setLoadingStep((previousStep) =>
-        previousStep < loadingSteps.length - 1
+      setLoadingStep((previousStep) => {
+        if (previousStep === 0 && uploadProgress < 100) {
+          return 0;
+        }
+
+        return previousStep <
+          loadingSteps.length - 1
           ? previousStep + 1
-          : previousStep
-      );
-    }, 2500);
+          : previousStep;
+      });
+    }, 3000);
 
     return () => {
       clearInterval(interval);
     };
-  }, [analyzeLoading]);
+  }, [
+    analyzeLoading,
+    uploadProgress,
+    loadingSteps.length,
+  ]);
 
-  const sendChatMessage = async (text?: string) => {
+  const showError = (
+    title: string,
+    message: string
+  ) => {
+    if (Platform.OS === "web") {
+      window.alert(`${title}\n\n${message}`);
+      return;
+    }
+
+    Alert.alert(title, message);
+  };
+
+  const showMessage = (
+    title: string,
+    message: string
+  ) => {
+    if (Platform.OS === "web") {
+      window.alert(`${title}\n\n${message}`);
+      return;
+    }
+
+    Alert.alert(title, message);
+  };
+
+  const getErrorMessage = (
+    result: any,
+    status: number
+  ): string => {
+    if (Array.isArray(result?.detail)) {
+      return result.detail
+        .map((item: any) => {
+          const location = Array.isArray(item?.loc)
+            ? item.loc.join(" → ")
+            : "";
+
+          const message =
+            item?.msg ??
+            "The submitted value is invalid.";
+
+          return location
+            ? `${location}: ${message}`
+            : message;
+        })
+        .join("\n");
+    }
+
+    if (typeof result?.detail === "string") {
+      return result.detail;
+    }
+
+    if (typeof result?.error === "string") {
+      return result.error;
+    }
+
+    return `The server returned an error (${status}).`;
+  };
+
+  /**
+   * Loads saved analysis records from Supabase.
+   */
+  const loadAnalysisHistory = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("analysis_records")
+        .select(
+          `
+            id,
+            level,
+            prediction,
+            confidence,
+            lime,
+            feedback,
+            video_path,
+            created_at
+          `
+        )
+        .eq("user_id", session.user.id)
+        .eq("status", "completed")
+        .order("created_at", {
+          ascending: false,
+        });
+
+      if (error) {
+        throw error;
+      }
+
+      const records = await Promise.all(
+        (data ?? []).map(async (row) => {
+          let signedVideoUrl: string | undefined;
+
+          if (row.video_path) {
+            const {
+              data: signedUrlData,
+              error: signedUrlError,
+            } = await supabase.storage
+              .from(VIDEO_BUCKET)
+              .createSignedUrl(
+                row.video_path,
+                60 * 60
+              );
+
+            if (!signedUrlError) {
+              signedVideoUrl =
+                signedUrlData.signedUrl;
+            }
+          }
+
+          const record: AnalysisRecord = {
+            id: row.id,
+            date: new Date(
+              row.created_at
+            ).toLocaleDateString("en-US"),
+            level: row.level ?? "Unknown",
+            prediction: row.prediction,
+            confidence:
+              typeof row.confidence === "number"
+                ? row.confidence
+                : Number(row.confidence ?? 0),
+            lime: Array.isArray(row.lime)
+              ? row.lime
+              : [],
+            feedback: row.feedback ?? "",
+            videoUri: signedVideoUrl,
+          };
+
+          return record;
+        })
+      );
+
+      setHistory(records);
+    } catch (error) {
+      console.error(
+        "Failed to load analysis history:",
+        error
+      );
+    }
+  };
+
+  const sendChatMessage = async (
+    text?: string
+  ) => {
     const inputToUse = text ?? chatInput;
+    const trimmedInput = inputToUse.trim();
 
-    if (!inputToUse.trim() || chatLoading) {
+    if (!trimmedInput || chatLoading) {
       return;
     }
 
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       role: "user",
-      text: inputToUse.trim(),
+      text: trimmedInput,
     };
 
     setMessages((previousMessages) => [
@@ -212,10 +417,11 @@ function MainApp({ session }: MainAppProps) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
+          Authorization:
+            `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
-          message: inputToUse.trim(),
+          message: trimmedInput,
           history: history.slice(0, 5),
           profile: {
             height: profile.height,
@@ -223,19 +429,37 @@ function MainApp({ session }: MainAppProps) {
             age: profile.age,
             experience: profile.experience,
             sessions: profile.sessions,
-            currentGrade: profile.currentGrade,
+            currentGrade:
+              profile.currentGrade,
             goalGrade: profile.goalGrade,
           },
         }),
       });
 
-      const data = await response.json();
+      const rawResponse =
+        await response.text();
+
+      let data: any;
+
+      try {
+        data = JSON.parse(rawResponse);
+      } catch {
+        console.error(
+          "The chat API returned a non-JSON response:",
+          rawResponse
+        );
+
+        throw new Error(
+          `The server returned an invalid response (${response.status}).`
+        );
+      }
 
       if (!response.ok) {
         throw new Error(
-          data?.detail ||
-            data?.error ||
-            "채팅 요청에 실패했습니다."
+          getErrorMessage(
+            data,
+            response.status
+          )
         );
       }
 
@@ -245,7 +469,7 @@ function MainApp({ session }: MainAppProps) {
         text:
           data.success && data.answer
             ? data.answer
-            : "답변을 가져오지 못했습니다.",
+            : "The AI coach did not return an answer.",
       };
 
       setMessages((previousMessages) => [
@@ -253,15 +477,15 @@ function MainApp({ session }: MainAppProps) {
         aiMessage,
       ]);
     } catch (error) {
-      console.error("채팅 오류:", error);
+      console.error("Chat error:", error);
 
       const errorMessage: Message = {
-        id: `error-${Date.now()}`,
+        id: `chat-error-${Date.now()}`,
         role: "ai",
         text:
           error instanceof Error
             ? error.message
-            : "서버 연결에 실패했습니다.",
+            : "Unable to connect to the server.",
       };
 
       setMessages((previousMessages) => [
@@ -273,82 +497,246 @@ function MainApp({ session }: MainAppProps) {
     }
   };
 
+  /**
+   * Selects a video and stores the information
+   * needed by web and native upload functions.
+   */
   const pickVideo = async () => {
     try {
       const result =
         await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+          mediaTypes: ["videos"],
           quality: 0.8,
         });
 
-      if (!result.canceled && result.assets.length > 0) {
-        setVideoUri(result.assets[0].uri);
+      if (
+        result.canceled ||
+        result.assets.length === 0
+      ) {
+        return;
+      }
+
+      const asset = result.assets[0];
+
+      setVideoUri(asset.uri);
+
+      setVideoFileName(
+        asset.fileName ??
+          `climb_video_${Date.now()}.mp4`
+      );
+
+      setVideoMimeType(
+        asset.mimeType ?? "video/mp4"
+      );
+
+      if (Platform.OS === "web") {
+        setVideoFile(asset.file ?? null);
+      } else {
+        setVideoFile(null);
       }
     } catch (error) {
-      console.error("영상 선택 오류:", error);
-      Alert.alert("오류", "영상을 선택하지 못했습니다.");
+      console.error(
+        "Video selection error:",
+        error
+      );
+
+      showError(
+        "Video selection failed",
+        "Unable to select the video. Please try again."
+      );
     }
   };
 
+  /**
+   * Uploads the selected video to Supabase Storage,
+   * sends only video_path to FastAPI,
+   * and saves the completed result in analysis_records.
+   */
   const runAnalysis = async () => {
     if (!videoUri || analyzeLoading) {
       return;
     }
 
+    let uploadedVideoPath: string | null = null;
+    let recordSaved = false;
+
     setAnalyzeLoading(true);
     setCurrentAnalysis(null);
-
-    const formData = new FormData();
-
-    formData.append(
-      "file",
-      {
-        uri: videoUri,
-        name: "climb_video.mp4",
-        type: "video/mp4",
-      } as any
-    );
-
-    formData.append("height", profile.height);
-    formData.append("weight", profile.weight);
-    formData.append("question", analyzeInput);
+    setUploadProgress(0);
+    setLoadingStep(0);
 
     try {
-      const response = await fetch(ANALYZE_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: formData,
-      });
+      /*
+       * 1. Upload the video directly to Supabase Storage.
+       */
+      if (Platform.OS === "web") {
+        if (!videoFile) {
+          throw new Error(
+            "The selected browser file is unavailable. Please select the video again."
+          );
+        }
 
-      const result = await response.json();
+        uploadedVideoPath =
+          await uploadVideoWeb({
+            file: videoFile,
+            onProgress: setUploadProgress,
+          });
+      } else {
+        uploadedVideoPath =
+          await uploadVideoNative({
+            uri: videoUri,
+            fileName: videoFileName,
+            mimeType: videoMimeType,
+            onProgress: setUploadProgress,
+          });
+      }
+
+      setUploadProgress(100);
+      setLoadingStep(1);
+
+      /*
+       * 2. Send JSON to FastAPI.
+       * The video file itself is no longer sent to Cloud Run.
+       */
+      const response = await fetch(
+        ANALYZE_URL,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+            Authorization:
+              `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            video_path:
+              uploadedVideoPath,
+            height:
+              profile.height.trim() ||
+              null,
+            weight:
+              profile.weight.trim() ||
+              null,
+            question:
+              analyzeInput.trim() ||
+              null,
+          }),
+        }
+      );
+
+      const rawResponse =
+        await response.text();
+
+      let result: any;
+
+      try {
+        result = JSON.parse(rawResponse);
+      } catch {
+        console.error(
+          "The analysis API returned a non-JSON response:",
+          rawResponse
+        );
+
+        throw new Error(
+          `The server returned an invalid response (${response.status}).`
+        );
+      }
 
       if (!response.ok) {
+        console.error(
+          "Analyze API error response:",
+          result
+        );
+
         throw new Error(
-          result?.detail ||
-            result?.error ||
-            "영상 분석 요청에 실패했습니다."
+          getErrorMessage(
+            result,
+            response.status
+          )
         );
       }
 
       if (!result.success) {
-        Alert.alert(
-          "분석 실패",
-          result.error || "알 수 없는 오류가 발생했습니다."
+        throw new Error(
+          result.error ||
+            "The video analysis failed."
         );
-        return;
+      }
+
+      /*
+       * 3. Save the completed result in Supabase Database.
+       */
+      const {
+        data: savedRecord,
+        error: saveError,
+      } = await supabase
+        .from("analysis_records")
+        .insert({
+          user_id: session.user.id,
+          level: result.level,
+          prediction: result.prediction,
+          confidence: result.confidence,
+          lime: result.lime ?? [],
+          feedback:
+            result.feedback ?? null,
+          video_path:
+            uploadedVideoPath,
+          question:
+            analyzeInput.trim() ||
+            null,
+          status: "completed",
+          error_message: null,
+        })
+        .select(
+          `
+            id,
+            created_at
+          `
+        )
+        .single();
+
+      if (saveError) {
+        throw new Error(
+          `The analysis was completed, but the result could not be saved: ${saveError.message}`
+        );
+      }
+
+      recordSaved = true;
+
+      /*
+       * 4. Create a temporary signed URL for video playback.
+       */
+      const {
+        data: signedUrlData,
+        error: signedUrlError,
+      } = await supabase.storage
+        .from(VIDEO_BUCKET)
+        .createSignedUrl(
+          uploadedVideoPath,
+          60 * 60
+        );
+
+      if (signedUrlError) {
+        console.warn(
+          "Unable to create video signed URL:",
+          signedUrlError.message
+        );
       }
 
       const newRecord: AnalysisRecord = {
-        id: Date.now().toString(),
-        date: new Date().toLocaleDateString("ko-KR"),
+        id: savedRecord.id,
+        date: new Date(
+          savedRecord.created_at
+        ).toLocaleDateString("en-US"),
         level: result.level,
         prediction: result.prediction,
         confidence: result.confidence,
-        lime: result.lime || [],
-        feedback: result.feedback,
-        videoUri,
+        lime: result.lime ?? [],
+        feedback:
+          result.feedback ?? "",
+        videoUri:
+          signedUrlData?.signedUrl ??
+          videoUri,
       };
 
       setCurrentAnalysis(newRecord);
@@ -359,18 +747,52 @@ function MainApp({ session }: MainAppProps) {
       ]);
 
       setVideoUri(null);
+      setVideoFile(null);
+      setVideoFileName(null);
+      setVideoMimeType(null);
       setAnalyzeInput("");
+      setUploadProgress(0);
     } catch (error) {
-      console.error("분석 오류:", error);
+      console.error(
+        "Analysis error:",
+        error
+      );
 
-      Alert.alert(
-        "오류",
+      /*
+       * Delete an orphaned Storage file when analysis
+       * or database saving failed.
+       */
+      if (
+        uploadedVideoPath &&
+        !recordSaved
+      ) {
+        const { error: removeError } =
+          await supabase.storage
+            .from(VIDEO_BUCKET)
+            .remove([
+              uploadedVideoPath,
+            ]);
+
+        if (removeError) {
+          console.warn(
+            "Unable to remove failed upload:",
+            removeError.message
+          );
+        }
+      }
+
+      const message =
         error instanceof Error
           ? error.message
-          : "서버 통신 오류가 발생했습니다."
+          : "An unexpected error occurred during the analysis.";
+
+      showError(
+        "Analysis failed",
+        message
       );
     } finally {
       setAnalyzeLoading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -384,31 +806,47 @@ function MainApp({ session }: MainAppProps) {
             messages={messages}
             chatInput={chatInput}
             setChatInput={setChatInput}
-            sendChatMessage={sendChatMessage}
+            sendChatMessage={
+              sendChatMessage
+            }
             chatLoading={chatLoading}
           />
         )}
 
         {activeTab === "analyze" && (
           <AnalyzeScreen
-            analyzeLoading={analyzeLoading}
-            currentAnalysis={currentAnalysis}
+            analyzeLoading={
+              analyzeLoading
+            }
+            currentAnalysis={
+              currentAnalysis
+            }
             videoUri={videoUri}
             analyzeInput={analyzeInput}
-            setAnalyzeInput={setAnalyzeInput}
+            setAnalyzeInput={
+              setAnalyzeInput
+            }
             pickVideo={pickVideo}
             runAnalysis={runAnalysis}
-            setCurrentAnalysis={setCurrentAnalysis}
+            setCurrentAnalysis={
+              setCurrentAnalysis
+            }
             loadingStep={loadingStep}
-            loadingSteps={loadingSteps}
+            loadingSteps={
+              loadingSteps
+            }
           />
         )}
 
         {activeTab === "history" && (
           <HistoryScreen
             history={history}
-            selectedHistoryItem={selectedHistoryItem}
-            setSelectedHistoryItem={setSelectedHistoryItem}
+            selectedHistoryItem={
+              selectedHistoryItem
+            }
+            setSelectedHistoryItem={
+              setSelectedHistoryItem
+            }
           />
         )}
 
@@ -423,7 +861,9 @@ function MainApp({ session }: MainAppProps) {
       <BottomTabs
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        onTabPress={() => setSelectedHistoryItem(null)}
+        onTabPress={() =>
+          setSelectedHistoryItem(null)
+        }
       />
     </SafeAreaView>
   );
