@@ -8,9 +8,9 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
   StyleSheet,
 } from "react-native";
+
 import { Header } from "../components/Header";
 import { Message } from "../types";
 import { ACCENT_COLOR } from "../constants/theme";
@@ -18,8 +18,8 @@ import { ACCENT_COLOR } from "../constants/theme";
 interface HomeScreenProps {
   messages: Message[];
   chatInput: string;
-  setChatInput: (t: string) => void;
-  sendChatMessage: (t?: string) => void;
+  setChatInput: (text: string) => void;
+  sendChatMessage: (text?: string) => void;
   chatLoading: boolean;
 }
 
@@ -30,24 +30,69 @@ export const HomeScreen = ({
   sendChatMessage,
   chatLoading,
 }: HomeScreenProps) => {
+  const handleSend = () => {
+    if (!chatInput.trim() || chatLoading) {
+      return;
+    }
 
+    sendChatMessage();
+  };
 
   return (
     <View style={styles.screen}>
       <Header title="AI Coach" />
+
       <FlatList
         data={messages}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: 16, paddingBottom: 0 }}
-        renderItem={({ item }) => (
-          <View style={[styles.msgBubble, item.role === "user" ? styles.userMsg : styles.aiMsg]}>
-            <Text style={[styles.msgText, { color: item.role === "user" ? "white" : "#1E293B" }]}>
-              {item.text}
+        contentContainerStyle={styles.messageList}
+        keyboardShouldPersistTaps="handled"
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyTitle}>
+              Start a conversation
+            </Text>
+
+            <Text style={styles.emptyText}>
+              Ask your AI coach about climbing technique,
+              training, recovery, or your recent analysis.
             </Text>
           </View>
-        )}
+        }
+        renderItem={({ item }) => {
+          const isUser = item.role === "user";
+
+          return (
+            <View
+              style={[
+                styles.messageBubble,
+                isUser ? styles.userMessage : styles.aiMessage,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.messageText,
+                  isUser
+                    ? styles.userMessageText
+                    : styles.aiMessageText,
+                ]}
+              >
+                {item.text}
+              </Text>
+            </View>
+          );
+        }}
       />
-      {chatLoading && <ActivityIndicator style={{ marginBottom: 10 }} color={ACCENT_COLOR} />}
+
+      {chatLoading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator color={ACCENT_COLOR} />
+          <Text style={styles.loadingText}>
+            AI Coach is thinking...
+          </Text>
+        </View>
+      )}
+
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={55}
@@ -57,11 +102,28 @@ export const HomeScreen = ({
             style={styles.chatInput}
             value={chatInput}
             onChangeText={setChatInput}
-            placeholder="코치에게 질문하기..."
+            placeholder="Ask your coach a question..."
+            placeholderTextColor="#94A3B8"
             multiline
+            editable={!chatLoading}
+            returnKeyType="send"
+            blurOnSubmit={false}
+            onSubmitEditing={handleSend}
+            accessibilityLabel="Chat message input"
           />
-          <TouchableOpacity style={styles.sendBtn} onPress={() => sendChatMessage()}>
-            <Text style={styles.sendBtnText}>➤</Text>
+
+          <TouchableOpacity
+            style={[
+              styles.sendButton,
+              (!chatInput.trim() || chatLoading) &&
+                styles.disabledButton,
+            ]}
+            onPress={handleSend}
+            disabled={!chatInput.trim() || chatLoading}
+            accessibilityRole="button"
+            accessibilityLabel="Send message"
+          >
+            <Text style={styles.sendButtonText}>➤</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -70,60 +132,122 @@ export const HomeScreen = ({
 };
 
 const styles = StyleSheet.create({
-  screen: { flex: 1 },
-  msgBubble: {
+  screen: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+  },
+
+  messageList: {
+    flexGrow: 1,
+    padding: 16,
+    paddingBottom: 8,
+  },
+
+  messageBubble: {
+    maxWidth: "85%",
+    marginBottom: 10,
     padding: 14,
     borderRadius: 20,
-    marginBottom: 10,
-    maxWidth: "85%",
   },
-  userMsg: {
+
+  userMessage: {
     alignSelf: "flex-end",
     backgroundColor: ACCENT_COLOR,
     borderBottomRightRadius: 4,
   },
-  aiMsg: {
+
+  aiMessage: {
     alignSelf: "flex-start",
     backgroundColor: "#F1F5F9",
     borderBottomLeftRadius: 4,
   },
-  msgText: { fontSize: 16, lineHeight: 22 },
+
+  messageText: {
+    fontSize: 16,
+    lineHeight: 22,
+  },
+
+  userMessageText: {
+    color: "#FFFFFF",
+  },
+
+  aiMessageText: {
+    color: "#1E293B",
+  },
+
+  loadingContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+
+  loadingText: {
+    marginLeft: 8,
+    color: "#64748B",
+    fontSize: 13,
+  },
+
   chatInputBar: {
     flexDirection: "row",
+    alignItems: "flex-end",
     padding: 12,
-    backgroundColor: "white",
+    backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
     borderTopColor: "#F1F5F9",
-    alignItems: "flex-end",
   },
+
   chatInput: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
-    borderRadius: 20,
+    maxHeight: 100,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    maxHeight: 100,
+    color: "#1E293B",
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 20,
     fontSize: 16,
   },
-  sendBtn: {
+
+  sendButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    backgroundColor: ACCENT_COLOR,
     justifyContent: "center",
     alignItems: "center",
     marginLeft: 8,
+    backgroundColor: ACCENT_COLOR,
+    borderRadius: 22,
   },
-  sendBtnText: { color: "white", fontSize: 18 },
-  chipContainer: { paddingVertical: 10, paddingHorizontal: 5 },
-  chip: {
-    backgroundColor: "#EFF6FF",
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginHorizontal: 5,
-    borderWidth: 1,
-    borderColor: "#DBEAFE",
+
+  disabledButton: {
+    opacity: 0.45,
   },
-  chipText: { color: ACCENT_COLOR, fontSize: 13, fontWeight: "600" },
+
+  sendButtonText: {
+    color: "#FFFFFF",
+    fontSize: 18,
+  },
+
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 28,
+  },
+
+  emptyTitle: {
+    marginBottom: 8,
+    color: "#1E293B",
+    fontSize: 18,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+
+  emptyText: {
+    color: "#94A3B8",
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+  },
 });

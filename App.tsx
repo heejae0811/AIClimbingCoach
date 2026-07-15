@@ -124,13 +124,13 @@ function MainApp({ session }: MainAppProps) {
 
   // User Profile
   const [profile, setProfile] = useState<UserProfile>({
-    height: "170",
-    weight: "70",
-    age: "25",
-    experience: "1년",
-    sessions: "3",
-    currentGrade: "V1",
-    goalGrade: "V7",
+    height: "",
+    weight: "",
+    age: "",
+    experience: "",
+    sessions: "",
+    currentGrade: "",
+    goalGrade: "",
   });
 
   // Home / Chat

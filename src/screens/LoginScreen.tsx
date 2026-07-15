@@ -13,6 +13,7 @@ import {
 import { supabase } from "../../lib/supabase";
 
 const ACCENT_COLOR = "#2563EB";
+const ERROR_COLOR = "#EF4444";
 const AUTH_EMAIL_DOMAIN = "auth.aiclimbingcoach.app";
 
 function normalizeUsername(username: string): string {
@@ -23,8 +24,67 @@ function usernameToEmail(username: string): string {
   return `${normalizeUsername(username)}@${AUTH_EMAIL_DOMAIN}`;
 }
 
-function validateUsername(username: string): boolean {
+function isValidUsername(username: string): boolean {
   return /^[a-z0-9_]{4,20}$/.test(normalizeUsername(username));
+}
+
+function getEnglishAuthErrorMessage(
+  error: unknown,
+  isSignUp: boolean
+): string {
+  const rawMessage =
+    error instanceof Error
+      ? error.message.toLowerCase()
+      : String(error).toLowerCase();
+
+  if (
+    rawMessage.includes("invalid login credentials") ||
+    rawMessage.includes("invalid credentials")
+  ) {
+    return "The username or password is incorrect.";
+  }
+
+  if (
+    rawMessage.includes("already registered") ||
+    rawMessage.includes("user already exists") ||
+    rawMessage.includes("duplicate key") ||
+    rawMessage.includes("23505")
+  ) {
+    return "This username is already in use.";
+  }
+
+  if (rawMessage.includes("password should be at least")) {
+    return "The password must be at least 8 characters long.";
+  }
+
+  if (
+    rawMessage.includes("email rate limit exceeded") ||
+    rawMessage.includes("rate limit")
+  ) {
+    return "Too many attempts. Please try again later.";
+  }
+
+  if (
+    rawMessage.includes("network request failed") ||
+    rawMessage.includes("failed to fetch")
+  ) {
+    return "Unable to connect to the server. Please check your internet connection.";
+  }
+
+  if (
+    rawMessage.includes("jwt expired") ||
+    rawMessage.includes("session expired")
+  ) {
+    return "Your session has expired. Please sign in again.";
+  }
+
+  if (rawMessage.includes("row-level security")) {
+    return "You do not have permission to save this information.";
+  }
+
+  return isSignUp
+    ? "Unable to create your account. Please try again."
+    : "Unable to sign in. Please try again.";
 }
 
 export const LoginScreen = () => {
@@ -32,158 +92,148 @@ export const LoginScreen = () => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
 
   const handleAuth = async () => {
+    setErrorMsg("");
+
     const normalizedUsername = normalizeUsername(username);
 
-    if (!validateUsername(normalizedUsername)) {
-      Alert.alert(
-        "아이디 확인",
-        "아이디는 영문 소문자, 숫자, 밑줄만 사용하여 4~20자로 입력해주세요."
+    if (!isValidUsername(normalizedUsername)) {
+      setErrorMsg(
+        "Username must be 4–20 characters and may contain lowercase letters, numbers, and underscores only."
       );
       return;
     }
 
     if (password.length < 8) {
-      Alert.alert("비밀번호 확인", "비밀번호는 8자 이상 입력해주세요.");
+      setErrorMsg("The password must be at least 8 characters long.");
       return;
     }
-
-    const email = usernameToEmail(normalizedUsername);
 
     setLoading(true);
 
     try {
       if (isSignUp) {
-        await handleSignUp(normalizedUsername, email);
+        const email = usernameToEmail(normalizedUsername);
+
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              username: normalizedUsername,
+            },
+          },
+        });
+
+        if (error) {
+          throw error;
+        }
+
+        if (!data.user) {
+          throw new Error("User account was not created.");
+        }
+
+        const { error: profileError } = await supabase
+          .from("profiles")
+          .insert({
+            user_id: data.user.id,
+            username: normalizedUsername,
+          });
+
+        if (profileError) {
+          throw profileError;
+        }
+
+        Alert.alert(
+          "Sign-up complete",
+          "Your account has been created successfully."
+        );
       } else {
-        await handleSignIn(email);
+        const email = usernameToEmail(normalizedUsername);
+
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (error) {
+          throw error;
+        }
       }
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "요청을 처리하는 중 오류가 발생했습니다.";
+      const message = getEnglishAuthErrorMessage(error, isSignUp);
 
-      Alert.alert(isSignUp ? "회원가입 실패" : "로그인 실패", message);
+      setErrorMsg(message);
+
+      Alert.alert(
+        isSignUp ? "Sign-up failed" : "Sign-in failed",
+        message
+      );
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSignUp = async (
-    normalizedUsername: string,
-    email: string
-  ) => {
-    /*
-     * profiles 테이블은 RLS로 자기 데이터만 조회할 수 있으므로,
-     * 로그인하지 않은 상태에서 username 중복 여부를 직접 조회하면
-     * 정확한 중복 확인이 불가능할 수 있습니다.
-     *
-     * 최종 중복 여부는 Supabase Auth와 profiles의 unique index가 검사합니다.
-     */
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          username: normalizedUsername,
-        },
-      },
-    });
-
-    if (error) {
-      if (
-        error.message.toLowerCase().includes("already") ||
-        error.message.toLowerCase().includes("registered")
-      ) {
-        throw new Error("이미 사용 중인 아이디입니다.");
-      }
-
-      throw error;
-    }
-
-    if (!data.user) {
-      throw new Error("사용자 계정이 생성되지 않았습니다.");
-    }
-
-    /*
-     * Supabase에서 Confirm email을 꺼두었다면
-     * 회원가입 직후 session이 생성됩니다.
-     */
-    if (!data.session) {
-      throw new Error(
-        "회원가입은 되었지만 로그인 세션이 생성되지 않았습니다. Supabase의 Confirm email 설정을 확인해주세요."
-      );
-    }
-
-    const { error: profileError } = await supabase
-      .from("profiles")
-      .insert({
-        user_id: data.user.id,
-        username: normalizedUsername,
-      });
-
-    if (profileError) {
-      if (profileError.code === "23505") {
-        throw new Error("이미 사용 중인 아이디입니다.");
-      }
-
-      throw new Error(
-        `프로필 생성에 실패했습니다: ${profileError.message}`
-      );
-    }
-
-    Alert.alert("회원가입 완료", "계정이 생성되었습니다.");
-  };
-
-  const handleSignIn = async (email: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      throw new Error("아이디 또는 비밀번호가 올바르지 않습니다.");
     }
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.logo}>🧗</Text>
+        <Text style={styles.logo}>
+          {isSignUp ? "🧗" : "🧗‍♂️"}
+        </Text>
 
         <Text style={styles.title}>
-          {isSignUp ? "AI Coach 회원가입" : "AI Coach 로그인"}
+          {isSignUp ? "Create an account" : "Climbing AI Coach Sign In"}
         </Text>
 
         <Text style={styles.description}>
           {isSignUp
-            ? "새로운 아이디와 비밀번호를 입력해주세요."
-            : "등록한 아이디와 비밀번호를 입력해주세요."}
+            ? "Enter a username and password to create your account."
+            : "Enter your username and password to continue."}
         </Text>
 
         <TextInput
-          style={styles.input}
-          placeholder="아이디"
+          style={[
+            styles.input,
+            errorMsg.toLowerCase().includes("username") &&
+              styles.errorInput,
+          ]}
+          placeholder="Username"
           value={username}
-          onChangeText={setUsername}
+          onChangeText={(text) => {
+            setUsername(text);
+            setErrorMsg("");
+          }}
           autoCapitalize="none"
           autoCorrect={false}
           editable={!loading}
         />
 
         <TextInput
-          style={styles.input}
-          placeholder="비밀번호 (8자 이상)"
+          style={[
+            styles.input,
+            (
+              errorMsg.toLowerCase().includes("password") ||
+              errorMsg.toLowerCase().includes("credentials")
+            ) && styles.errorInput,
+          ]}
+          placeholder="Password (at least 8 characters)"
           value={password}
-          onChangeText={setPassword}
+          onChangeText={(text) => {
+            setPassword(text);
+            setErrorMsg("");
+          }}
           secureTextEntry
           autoCapitalize="none"
           autoCorrect={false}
           editable={!loading}
           onSubmitEditing={handleAuth}
         />
+
+        {errorMsg ? (
+          <Text style={styles.errorText}>{errorMsg}</Text>
+        ) : null}
 
         <TouchableOpacity
           style={[
@@ -197,7 +247,7 @@ export const LoginScreen = () => {
             <ActivityIndicator color="#FFFFFF" />
           ) : (
             <Text style={styles.buttonText}>
-              {isSignUp ? "회원가입" : "로그인"}
+              {isSignUp ? "Create account" : "Sign in"}
             </Text>
           )}
         </TouchableOpacity>
@@ -205,14 +255,15 @@ export const LoginScreen = () => {
         <TouchableOpacity
           onPress={() => {
             setIsSignUp((previous) => !previous);
+            setErrorMsg("");
             setPassword("");
           }}
           disabled={loading}
         >
           <Text style={styles.toggleText}>
             {isSignUp
-              ? "이미 계정이 있나요? 로그인"
-              : "처음이신가요? 회원가입"}
+              ? "Already have an account? Sign in"
+              : "New here? Create an account"}
           </Text>
         </TouchableOpacity>
       </View>
@@ -264,12 +315,24 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 
+  errorInput: {
+    borderColor: ERROR_COLOR,
+    backgroundColor: "#FEF2F2",
+  },
+
+  errorText: {
+    marginBottom: 15,
+    color: ERROR_COLOR,
+    fontSize: 13,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
   button: {
     minHeight: 54,
     justifyContent: "center",
     alignItems: "center",
     marginTop: 10,
-    paddingHorizontal: 18,
     backgroundColor: ACCENT_COLOR,
     borderRadius: 12,
   },

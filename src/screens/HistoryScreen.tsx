@@ -1,9 +1,17 @@
 import React from "react";
-import { View, FlatList, Text, TouchableOpacity, ScrollView, StyleSheet } from "react-native";
+import {
+  FlatList,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+
 import { Header } from "../components/Header";
 import { VideoBubble } from "../components/VideoBubble";
-import { AnalysisRecord } from "../types";
 import { ACCENT_COLOR } from "../constants/theme";
+import { AnalysisRecord } from "../types";
 
 interface HistoryScreenProps {
   history: AnalysisRecord[];
@@ -11,48 +19,149 @@ interface HistoryScreenProps {
   setSelectedHistoryItem: (item: AnalysisRecord | null) => void;
 }
 
+interface AnalysisDetailViewProps {
+  item: AnalysisRecord;
+  onBack: () => void;
+}
+
 export const HistoryScreen = ({
   history,
   selectedHistoryItem,
   setSelectedHistoryItem,
 }: HistoryScreenProps) => {
-  const AnalysisDetailView = ({ item, onBack }: { item: AnalysisRecord; onBack: () => void }) => (
-    <ScrollView style={styles.detailContainer}>
-      <TouchableOpacity onPress={onBack} style={styles.backButton}>
-        <Text style={styles.backButtonText}>← Back to History</Text>
-      </TouchableOpacity>
-      <View style={styles.resultCard}>
-        <Text style={styles.resultDate}>{item.date} 분석 결과</Text>
-        <Text style={styles.resultLevel}>{item.level}</Text>
-        <Text style={styles.resultConfidence}>신뢰도: {Math.round(item.confidence * 100)}%</Text>
+  const AnalysisDetailView = ({
+    item,
+    onBack,
+  }: AnalysisDetailViewProps) => {
+    const confidence =
+      typeof item.confidence === "number"
+        ? Math.round(item.confidence * 100)
+        : null;
 
-        {item.videoUri && <VideoBubble uri={item.videoUri} />}
+    return (
+      <View style={styles.screen}>
+        <Header title="Analysis Details" />
 
-        <View style={styles.divider} />
+        <ScrollView
+          contentContainerStyle={styles.detailContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          <TouchableOpacity
+            onPress={onBack}
+            style={styles.backButton}
+            accessibilityRole="button"
+            accessibilityLabel="Back to analysis history"
+          >
+            <Text style={styles.backButtonText}>
+              ← Back to History
+            </Text>
+          </TouchableOpacity>
 
-        <Text style={styles.sectionTitle}>LIME 분석 (주요 요인)</Text>
-        {item.lime.map((l, idx) => (
-          <View key={idx} style={styles.limeRow}>
-            <Text style={styles.limeText}>{l.feature_condition}</Text>
-            <View
-              style={[
-                styles.limeBar,
-                {
-                  width: Math.abs(l.importance * 100) * 2,
-                  backgroundColor: l.importance > 0 ? "#10B981" : "#EF4444",
-                },
-              ]}
-            />
+          <View style={styles.resultCard}>
+            <Text style={styles.resultDate}>
+              Analysis • {item.date}
+            </Text>
+
+            <Text style={styles.resultLabel}>
+              Performance Level
+            </Text>
+
+            <Text style={styles.resultLevel}>
+              {item.level}
+            </Text>
+
+            {confidence !== null && (
+              <Text style={styles.resultConfidence}>
+                Confidence: {confidence}%
+              </Text>
+            )}
+
+            {item.videoUri ? (
+              <View style={styles.videoContainer}>
+                <VideoBubble uri={item.videoUri} />
+              </View>
+            ) : null}
+
+            <View style={styles.divider} />
+
+            <Text style={styles.sectionTitle}>
+              LIME Explanation
+            </Text>
+
+            {item.lime && item.lime.length > 0 ? (
+              item.lime.map((limeItem, index) => {
+                const barWidth = Math.min(
+                  Math.abs(limeItem.importance) * 200,
+                  200
+                );
+
+                const isPositive =
+                  limeItem.importance > 0;
+
+                return (
+                  <View
+                    key={`${limeItem.feature_condition}-${index}`}
+                    style={styles.limeRow}
+                  >
+                    <View style={styles.limeHeader}>
+                      <Text
+                        style={styles.limeText}
+                        numberOfLines={2}
+                      >
+                        {limeItem.feature_condition}
+                      </Text>
+
+                      <Text
+                        style={[
+                          styles.limeValue,
+                          isPositive
+                            ? styles.positiveValue
+                            : styles.negativeValue,
+                        ]}
+                      >
+                        {limeItem.importance > 0 ? "+" : ""}
+                        {limeItem.importance.toFixed(3)}
+                      </Text>
+                    </View>
+
+                    <View style={styles.limeTrack}>
+                      <View
+                        style={[
+                          styles.limeBar,
+                          {
+                            width: barWidth,
+                            backgroundColor: isPositive
+                              ? "#10B981"
+                              : "#EF4444",
+                          },
+                        ]}
+                      />
+                    </View>
+                  </View>
+                );
+              })
+            ) : (
+              <Text style={styles.emptySectionText}>
+                No LIME explanation is available for this analysis.
+              </Text>
+            )}
+
+            <View style={styles.divider} />
+
+            <Text style={styles.sectionTitle}>
+              AI Coaching Feedback
+            </Text>
+
+            <Text style={styles.feedbackText}>
+              {item.feedback?.trim()
+                ? item.feedback
+                : "No coaching feedback is available for this analysis."}
+            </Text>
           </View>
-        ))}
-
-        <View style={styles.divider} />
-
-        <Text style={styles.sectionTitle}>AI 코칭 피드백</Text>
-        <Text style={styles.feedbackText}>{item.feedback}</Text>
+        </ScrollView>
       </View>
-    </ScrollView>
-  );
+    );
+  };
 
   if (selectedHistoryItem) {
     return (
@@ -63,83 +172,335 @@ export const HistoryScreen = ({
     );
   }
 
+  const latestLevel =
+    history.length > 0 ? history[0].level : null;
+
   return (
     <View style={styles.screen}>
       <Header title="Analysis History" />
+
       <FlatList
         data={history}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: 16 }}
+        contentContainerStyle={[
+          styles.listContent,
+          history.length === 0 &&
+            styles.emptyListContent,
+        ]}
         ListHeaderComponent={
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryTitle}>AI Progress Summary</Text>
+            <Text style={styles.summaryTitle}>
+              AI Progress Summary
+            </Text>
+
             <Text style={styles.summaryText}>
               {history.length > 0
-                ? `지금까지 ${history.length}개의 영상을 분석했습니다. 최근 실력은 ${history[0].level} 수준으로 평가됩니다.`
-                : "아직 분석 데이터가 없습니다. 영상을 업로드해 보세요!"}
+                ? `You have analyzed ${history.length} climbing ${
+                    history.length === 1 ? "video" : "videos"
+                  }. Your most recent performance was classified as ${latestLevel}.`
+                : "No analysis history yet. Upload a climbing video to get started."}
             </Text>
           </View>
         }
-        renderItem={({ item }) => (
-          <TouchableOpacity style={styles.historyCard} onPress={() => setSelectedHistoryItem(item)}>
-            <View>
-              <Text style={styles.historyDate}>{item.date}</Text>
-              <Text style={styles.historyLevel}>{item.level}</Text>
-              <Text style={styles.historyPreview} numberOfLines={1}>
-                {item.feedback}
-              </Text>
-            </View>
-            <Text style={styles.historyArrow}>→</Text>
-          </TouchableOpacity>
-        )}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyIcon}>🎥</Text>
+
+            <Text style={styles.emptyTitle}>
+              No Analysis Yet
+            </Text>
+
+            <Text style={styles.emptyText}>
+              Upload a climbing video to receive an AI-powered
+              performance analysis and personalized coaching feedback.
+            </Text>
+          </View>
+        }
+        renderItem={({ item }) => {
+          const confidence =
+            typeof item.confidence === "number"
+              ? Math.round(item.confidence * 100)
+              : null;
+
+          return (
+            <TouchableOpacity
+              style={styles.historyCard}
+              onPress={() =>
+                setSelectedHistoryItem(item)
+              }
+              accessibilityRole="button"
+              accessibilityLabel={`Open analysis from ${item.date}`}
+            >
+              <View style={styles.historyContent}>
+                <Text style={styles.historyDate}>
+                  {item.date}
+                </Text>
+
+                <Text style={styles.historyLevel}>
+                  {item.level}
+                </Text>
+
+                {confidence !== null && (
+                  <Text style={styles.historyConfidence}>
+                    Confidence: {confidence}%
+                  </Text>
+                )}
+
+                <Text
+                  style={styles.historyPreview}
+                  numberOfLines={2}
+                >
+                  {item.feedback?.trim()
+                    ? item.feedback
+                    : "No coaching feedback available."}
+                </Text>
+              </View>
+
+              <Text style={styles.historyArrow}>→</Text>
+            </TouchableOpacity>
+          );
+        }}
       />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  screen: { flex: 1 },
-  detailContainer: { flex: 1, padding: 20 },
-  backButton: { marginBottom: 15 },
-  backButtonText: { color: ACCENT_COLOR, fontWeight: "600" },
-  resultCard: {
-    backgroundColor: "white",
-    borderRadius: 24,
+  screen: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+  },
+
+  listContent: {
+    padding: 16,
+    paddingBottom: 32,
+  },
+
+  emptyListContent: {
+    flexGrow: 1,
+  },
+
+  detailContent: {
     padding: 20,
+    paddingBottom: 40,
+  },
+
+  backButton: {
+    alignSelf: "flex-start",
+    marginBottom: 15,
+  },
+
+  backButtonText: {
+    color: ACCENT_COLOR,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
+  resultCard: {
+    padding: 20,
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: "#F1F5F9",
+    borderRadius: 24,
   },
-  resultDate: { fontSize: 14, color: "#64748B", textAlign: "center", marginBottom: 5 },
+
+  resultDate: {
+    marginBottom: 12,
+    color: "#64748B",
+    fontSize: 14,
+    textAlign: "center",
+  },
+
+  resultLabel: {
+    color: "#94A3B8",
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+    textAlign: "center",
+    textTransform: "uppercase",
+  },
+
   resultLevel: {
+    marginVertical: 10,
+    color: "#1E293B",
     fontSize: 32,
     fontWeight: "900",
-    color: "#1E293B",
     textAlign: "center",
-    marginVertical: 10,
   },
-  resultConfidence: { fontSize: 14, color: "#64748B", textAlign: "center", marginBottom: 20 },
-  sectionTitle: { fontSize: 18, fontWeight: "700", color: "#1E293B", marginBottom: 12 },
-  feedbackText: { fontSize: 16, lineHeight: 24, color: "#334155" },
-  divider: { height: 1, backgroundColor: "#F1F5F9", marginVertical: 20 },
-  limeRow: { marginBottom: 10 },
-  limeText: { fontSize: 14, color: "#475569", marginBottom: 4 },
-  limeBar: { height: 8, borderRadius: 4 },
-  summaryCard: { backgroundColor: "#EFF6FF", padding: 20, borderRadius: 20, marginBottom: 20 },
-  summaryTitle: { fontSize: 18, fontWeight: "800", color: ACCENT_COLOR, marginBottom: 8 },
-  summaryText: { fontSize: 14, color: "#1E3A8A", lineHeight: 20 },
+
+  resultConfidence: {
+    marginBottom: 20,
+    color: "#64748B",
+    fontSize: 14,
+    textAlign: "center",
+  },
+
+  videoContainer: {
+    marginTop: 4,
+  },
+
+  divider: {
+    height: 1,
+    marginVertical: 20,
+    backgroundColor: "#F1F5F9",
+  },
+
+  sectionTitle: {
+    marginBottom: 12,
+    color: "#1E293B",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+
+  feedbackText: {
+    color: "#334155",
+    fontSize: 16,
+    lineHeight: 24,
+  },
+
+  limeRow: {
+    marginBottom: 14,
+  },
+
+  limeHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 6,
+  },
+
+  limeText: {
+    flex: 1,
+    marginRight: 12,
+    color: "#475569",
+    fontSize: 14,
+    lineHeight: 19,
+  },
+
+  limeValue: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  positiveValue: {
+    color: "#059669",
+  },
+
+  negativeValue: {
+    color: "#DC2626",
+  },
+
+  limeTrack: {
+    width: "100%",
+    height: 8,
+    overflow: "hidden",
+    backgroundColor: "#E2E8F0",
+    borderRadius: 4,
+  },
+
+  limeBar: {
+    height: "100%",
+    borderRadius: 4,
+  },
+
+  emptySectionText: {
+    color: "#94A3B8",
+    fontSize: 14,
+    lineHeight: 20,
+  },
+
+  summaryCard: {
+    marginBottom: 20,
+    padding: 20,
+    backgroundColor: "#EFF6FF",
+    borderRadius: 20,
+  },
+
+  summaryTitle: {
+    marginBottom: 8,
+    color: ACCENT_COLOR,
+    fontSize: 18,
+    fontWeight: "800",
+  },
+
+  summaryText: {
+    color: "#1E3A8A",
+    fontSize: 14,
+    lineHeight: 20,
+  },
+
   historyCard: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "white",
-    padding: 16,
-    borderRadius: 16,
     marginBottom: 12,
+    padding: 16,
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: "#F1F5F9",
+    borderRadius: 16,
   },
-  historyDate: { fontSize: 12, color: "#94A3B8" },
-  historyLevel: { fontSize: 18, fontWeight: "700", color: "#1E293B" },
-  historyPreview: { fontSize: 13, color: "#64748B", width: 200 },
-  historyArrow: { fontSize: 20, color: "#CBD5E1" },
+
+  historyContent: {
+    flex: 1,
+    marginRight: 12,
+  },
+
+  historyDate: {
+    color: "#94A3B8",
+    fontSize: 12,
+  },
+
+  historyLevel: {
+    marginTop: 3,
+    color: "#1E293B",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+
+  historyConfidence: {
+    marginTop: 2,
+    color: "#64748B",
+    fontSize: 12,
+  },
+
+  historyPreview: {
+    marginTop: 6,
+    color: "#64748B",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+
+  historyArrow: {
+    color: "#CBD5E1",
+    fontSize: 20,
+  },
+
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 28,
+    paddingBottom: 60,
+  },
+
+  emptyIcon: {
+    marginBottom: 14,
+    fontSize: 44,
+  },
+
+  emptyTitle: {
+    marginBottom: 8,
+    color: "#1E293B",
+    fontSize: 20,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+
+  emptyText: {
+    color: "#64748B",
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: "center",
+  },
 });
